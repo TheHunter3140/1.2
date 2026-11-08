@@ -5,7 +5,12 @@ struct GenStats {
     var promptN = 0          // tokens du prompt complet
     var reused = 0           // tokens déjà présents dans le cache KV (non retraités)
     var genN = 0
-    var ttft = 0.0
+    var ttft = 0.0                 // temps total jusqu'au premier token (prefill inclus)
+    var firstTokenAfterPrefill = 0.0 // attente du premier token après le prefill
+    var formatSeconds = 0.0         // application du template de chat
+    var tokenizeSeconds = 0.0       // tokenisation du prompt
+    var prefillSeconds = 0.0        // décodage des tokens non réutilisés
+    var decodeSeconds = 0.0         // boucle de génération après le prefill
     var genTps = 0.0
     var promptTps = 0.0      // vitesse sur les tokens réellement traités
     var reachedTokenLimit = false
@@ -218,14 +223,20 @@ final class Engine: @unchecked Sendable {
         // plus anciens tours (le prompt système et le dernier message restent).
         let reserve = min(max(64, cfg.maxTokens), max(64, nCtx / 2))
         var tokens: [llama_token] = []
+        var formatDuration = 0.0
+        var tokenizeDuration = 0.0
         while true {
+            let formatStart = Date()
             var prompt = format(messages, addAssistantPrefix: true)
+            formatDuration += Date().timeIntervalSince(formatStart)
             guard !prompt.isEmpty else {
                 messages.removeLast()
                 throw EngineError(msg: "Impossible de formater le prompt du modèle")
             }
             if noThink && thinkTemplate { prompt = Engine.closeThinking(prompt) }
+            let tokenizeStart = Date()
             tokens = tokenize(prompt, addSpecial: true)
+            tokenizeDuration += Date().timeIntervalSince(tokenizeStart)
             guard !tokens.isEmpty else {
                 messages.removeLast()
                 throw EngineError(msg: "Échec de la tokenisation du prompt")
@@ -306,6 +317,8 @@ final class Engine: @unchecked Sendable {
         var stats = GenStats()
         stats.promptN = tokens.count
         stats.reused = common
+        stats.formatSeconds = formatDuration
+        stats.tokenizeSeconds = tokenizeDuration
         let newTokens = Array(tokens[common...])
         let promptStart = Date()
         guard decode(newTokens) else {
@@ -315,7 +328,8 @@ final class Engine: @unchecked Sendable {
             throw EngineError(msg: "Échec du décodage du prompt (mémoire ou contexte insuffisant)")
         }
         let generationStart = Date()
-        stats.promptTps = Double(newTokens.count) / max(generationStart.timeIntervalSince(promptStart), 0.001)
+        stats.prefillSeconds = generationStart.timeIntervalSince(promptStart)
+        stats.promptTps = Double(newTokens.count) / max(stats.prefillSeconds, 0.001)
 
         var output = ""
         var pendingBytes: [UInt8] = []
@@ -324,6 +338,7 @@ final class Engine: @unchecked Sendable {
 
         while stats.genN < tokenLimit && nPast < nCtx && !cancel {
             let token = llama_sampler_sample(sampler, context, -1)
+            let sampledAt = Date()
             if llama_vocab_is_eog(vocabulary, token) {
                 endedByEOG = true
                 // On inscrit le jeton de fin dans le cache : il correspond à celui que le
@@ -344,10 +359,11 @@ final class Engine: @unchecked Sendable {
                 resetCache()
                 break
             }
-            stats.genN += 1
-            if stats.genN == 1 {
-                stats.ttft = Date().timeIntervalSince(promptStart)
+            if stats.genN == 0 {
+                stats.ttft = sampledAt.timeIntervalSince(promptStart)
+                stats.firstTokenAfterPrefill = sampledAt.timeIntervalSince(generationStart)
             }
+            stats.genN += 1
         }
         _ = endedByEOG
 
@@ -358,7 +374,8 @@ final class Engine: @unchecked Sendable {
         }
 
         stats.reachedTokenLimit = stats.genN >= tokenLimit && !cancel
-        stats.genTps = Double(stats.genN) / max(Date().timeIntervalSince(generationStart), 0.001)
+        stats.decodeSeconds = Date().timeIntervalSince(generationStart)
+        stats.genTps = Double(stats.genN) / max(stats.decodeSeconds, 0.001)
         messages.append(("assistant", output))
         return stats
     }

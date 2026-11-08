@@ -1092,7 +1092,8 @@ enum Sys {
             if thinkEnd == nil && text.contains("</think>") { thinkEnd = Date() }
             let seconds = thinkEnd.map { $0.timeIntervalSince(genStart) }
             let perToken = st.genTps > 0 ? 1000 / st.genTps : 0
-            var line = String(format: "%.0f ms/token · %.1f tokens/s · 1er token %.1f s", perToken, st.genTps, st.ttft)
+            var line = String(format: "%.0f ms/token · %.1f tokens/s · 1er token %.2f s (post-prefill %.2f s)", perToken, st.genTps, st.ttft, st.firstTokenAfterPrefill)
+            line += String(format: " · format %.0f ms · tokenize %.0f ms · prefill %.2f s · decode %.2f s", st.formatSeconds * 1000, st.tokenizeSeconds * 1000, st.prefillSeconds, st.decodeSeconds)
             if st.reused > 0 { line += " · cache \(st.reused)/\(st.promptN) tok" }
             if engine.trimmed > 0 { line += " · \(engine.trimmed) ancien(s) message(s) retiré(s)" }
             messages.append(Msg(role: "assistant", text: text, thinkSeconds: seconds, stat: line, needsContinuation: st.reachedTokenLimit))
@@ -1156,7 +1157,7 @@ enum Sys {
         engine.restore(system: sys, history: saved)
         loading = false
         if let r {
-            benchmark = String(format: "pp %.0f t/s · tg %.1f t/s · 1er token %.2f s · RAM %.0f Mo", r.promptTps, r.genTps, r.ttft, Sys.footprintMB())
+            benchmark = String(format: "pp %.0f t/s · tg %.1f t/s · TTFT %.2f s (post-prefill %.2f s) · format %.0f ms · tokenize %.0f ms · prefill %.2f s · decode %.2f s · RAM %.0f Mo", r.promptTps, r.genTps, r.ttft, r.firstTokenAfterPrefill, r.formatSeconds * 1000, r.tokenizeSeconds * 1000, r.prefillSeconds, r.decodeSeconds, Sys.footprintMB())
             Advisor.recordBenchmark(model: currentName, gpu: engine.gpuActive, tg: r.genTps, pp: r.promptTps)
         } else { benchmark = "Benchmark échoué" }
     }
