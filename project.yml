@@ -1,0 +1,51 @@
+name: Pal
+options:
+  deploymentTarget:
+    iOS: "16.4"
+  createIntermediateGroups: true
+  bundleIdPrefix: com.local
+
+packages:
+  SwiftMath:
+    url: https://github.com/mgriebling/SwiftMath
+    from: 1.6.0
+
+targets:
+  Pal:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.4"
+    sources:
+      - path: Sources
+    resources:
+      - path: Assets.xcassets
+      - path: LaunchScreen.storyboard
+    dependencies:
+      - framework: llama.xcframework
+        embed: true
+      - package: SwiftMath
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Pal
+        CFBundleName: Pal
+        CFBundleShortVersionString: "1.4.1"
+        CFBundleVersion: "10"
+        UILaunchStoryboardName: LaunchScreen
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.local.pal
+        PRODUCT_NAME: Pal
+        SWIFT_VERSION: "5.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "16.4"
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_BITCODE: "NO"
+        SWIFT_STRICT_CONCURRENCY: minimal
+      configs:
+        Release:
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
